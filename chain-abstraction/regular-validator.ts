@@ -82,6 +82,23 @@ const main = async () => {
     }
     // ----------------------------------------------------------------------------------------
 
+
+    const _savedSignMessage = pkpEthersWallet.signMessage.bind(pkpEthersWallet);
+    pkpEthersWallet.signMessage = async (message: string | Uint8Array) => {
+        const messageStr = message.toString();
+        const isHash = messageStr.startsWith('0x') && messageStr.length === 66;
+        if (isHash) {
+            const sigResponse = await litNodeClient.pkpSign({
+                pubKey: PKP_PUB_KEY,
+                toSign: ethers.utils.arrayify(messageStr),
+                sessionSigs: pkpSessionSigs
+            });
+            return sigResponse.signature;
+        }
+        return _savedSignMessage(message);
+    };
+
+
     const publicClient = createPublicClient({
         transport: http(),
         chain: sepolia,
