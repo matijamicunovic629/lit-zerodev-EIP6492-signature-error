@@ -1,6 +1,6 @@
 import "dotenv/config"
 
-import {LitAbility, LitActionResource, LitPKPResource} from "@lit-protocol/auth-helpers";
+import {LitActionResource, LitPKPResource} from "@lit-protocol/auth-helpers";
 import {LitNodeClient} from "@lit-protocol/lit-node-client";
 import {PKPEthersWallet} from "@lit-protocol/pkp-ethers";
 import {LIT_NETWORKS_KEYS} from "@lit-protocol/types";
@@ -11,10 +11,11 @@ import {getEntryPoint, KERNEL_V3_1} from "@zerodev/sdk/constants";
 import {sepolia} from "viem/chains";
 import {signerToEcdsaValidator} from "@zerodev/ecdsa-validator";
 import {createKernelAccount, verifyEIP6492Signature} from "@zerodev/sdk";
-import {LIT_NETWORK, LIT_RPC} from "@lit-protocol/constants";
-import {ethers} from "ethers";
+import {LIT_ABILITY, LIT_NETWORK, LIT_RPC} from "@lit-protocol/constants";
+import {ethers, providers, Signer} from "ethers";
 import {ETHRequestSigningPayload} from "@lit-protocol/pkp-ethers/src/lib/pkp-ethers-types";
 import {EthWalletProvider} from "@lit-protocol/lit-auth-client";
+import {CONSTANTS, PushAPI} from "@pushprotocol/restapi";
 
 const signer = privateKeyToAccount('0x8665803180babd49f9e48194cf8f78e493a3d961d0d2685abc4b1a3771925ef8' as Hex)
 const NETWORK = LIT_NETWORK.DatilDev
@@ -23,6 +24,53 @@ const SEPOLIA_RPC_URL = 'https://sepolia.infura.io/v3/b6bf7d3508c941499b10025c07
 const PKP_PUB_KEY = '0x04e48499f0f44c505a4275b2b6c83a771ef4579469ac8773daddbc0090f86d6ff9b961a9301b378afb793db3aeebe47ec3b56511f007ede8b7e10e1b3898905e51'
 const entryPoint = getEntryPoint("0.7");
 const kernelVersion = KERNEL_V3_1
+const RPC_URL =
+    'https://boldest-lingering-mansion.ethereum-sepolia.quiknode.pro/4e8ff9604fe745a7e3667de33e5e66d196fa5778/';
+
+
+class KernelSigner extends Signer {
+    private readonly kernelAccount: any; // Using any since we don't have the exact type
+    public override provider: providers.Provider;
+
+    constructor(account: any, provider: providers.Provider) {
+        super();
+        this.kernelAccount = account;
+        this.provider = provider;
+    }
+
+    async getAddress(): Promise<string> {
+        return this.kernelAccount.address;
+    }
+
+    async signMessage(message: string | Uint8Array): Promise<string> {
+        return await this.kernelAccount.signMessage({
+            message: typeof message === 'string' ? message : { raw: message },
+        });
+    }
+
+    async signTypedData(domain: any, types: any, value: any): Promise<string> {
+        const primaryType = Object.keys(types).find(
+            (key) => key !== 'EIP712Domain'
+        );
+        if (!primaryType) {
+            throw new Error('No primaryType found');
+        }
+        return await this.kernelAccount.signTypedData({
+            domain,
+            types,
+            primaryType,
+            message: value,
+        });
+    }
+
+    async signTransaction(): Promise<string> {
+        throw new Error('Transaction signing not supported for Kernel account');
+    }
+
+    connect(provider: providers.Provider): KernelSigner {
+        return new KernelSigner(this.kernelAccount, provider);
+    }
+}
 
 const main = async () => {
     console.log("connecting lit node client")
@@ -52,9 +100,9 @@ const main = async () => {
         resourceAbilityRequests: [
             {
                 resource: new LitActionResource("*"),
-                ability: LitAbility.LitActionExecution,
+                ability: LIT_ABILITY.LitActionExecution,
             },
-            {resource: new LitPKPResource("*"), ability: LitAbility.PKPSigning},
+            {resource: new LitPKPResource("*"), ability: LIT_ABILITY.PKPSigning},
         ],
     });
 
@@ -125,6 +173,8 @@ const main = async () => {
         message: "hello world",
     });
 
+    console.log('pkp signed message', await pkpEthersWallet.signMessage('Hello World'))
+
     console.log(
         await verifyEIP6492Signature({
             signer: accountForPkpWallet.address, // your smart account address
@@ -134,8 +184,14 @@ const main = async () => {
         })
     );
 
-
-
+// --- initializing pushAPI instance ------------
+    const caipAddress = `scw:eip155:${publicClient.chain.id}:${accountForPkpWallet.address}`;
+    const signer1 = new KernelSigner(accountForPkpWallet, new providers.JsonRpcProvider(RPC_URL));
+    const userAlice = await PushAPI.initialize(signer1, {
+        account: caipAddress,
+        env: CONSTANTS.ENV.PROD,
+    });
+// --- end of initializing pushAPI instance ------------
 
     // use validator as EOA wallet
     const ecdsaValidatorForEOAWallet = await signerToEcdsaValidator(publicClient, {
