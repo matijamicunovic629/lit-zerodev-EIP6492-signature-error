@@ -219,7 +219,7 @@ const main = async () => {
     const signer1 = new KernelSigner(accountForPkpWallet, new providers.JsonRpcProvider(RPC_URL));
     const userAlice = await PushAPI.initialize(signer1, {
         account: caipAddress,
-        env: CONSTANTS.ENV.STAGING,
+        env: CONSTANTS.ENV.PROD,
     });
 
     console.log("initalized result: ", userAlice.errors.length > 0 ? 'ERROR' : 'OK!!!')
